@@ -36,6 +36,17 @@ class Simulator:
         return neighbors
 
     def check_if_action_legal(self, action, player):
+        """Checks if the given action is legal for the specified player.
+        Parameters:
+            - action (tuple): A tuple representing the action to be checked.
+            - player (str): The name of the player attempting the action.
+        Returns:
+            - bool: True if the action is legal, False otherwise.
+        Processing Logic:
+            - Checks if the action is for a valid pirate belonging to the player.
+            - Checks if the action is a valid move, collect, deposit, or plunder action.
+            - Checks if the action is mutex with any other actions.
+            - Returns False if any of the checks fail."""
         def _is_move_action_legal(move_action, player):
             pirate_name = move_action[1]
             if pirate_name not in self.state['pirate_ships'].keys():
