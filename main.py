@@ -43,11 +43,34 @@ class Game:
             self.score[player] -= PENALTY
             raise ValueError(f'{self.ids[player]} timed out on action!')
         return action
+    
+    
+    def print_map(self, state):
+        for row in range(len(state["map"])):
+            for cell in range(len(state["map"][0])):
+                symbols = []
+                for pirate_ship in state["pirate_ships"].values():
+                    if pirate_ship["location"] == (row, cell):
+                        symbols.append('p')
+                for marine_ship in state["marine_ships"].values():
+                    if marine_ship["path"][marine_ship["index"]] == (row, cell):
+                        symbols.append('m')
+                for treasure in state["treasures"].values():
+                    if treasure["location"] == (row, cell):
+                        symbols.append('t')
+                if not symbols:
+                    symbols.append('_')  # Empty cell
+                print(''.join(symbols), end=' ')
+            print()
+        print()
 
     def play_episode(self, swapped=False):
         length_of_episode = int(self.initial_state["turns to go"]/2)
         for i in range(length_of_episode):
+            print(f"turn number {i}")
             for number, agent in enumerate(self.agents):
+                print(f"{self.ids[number]}'s turn")
+                self.print_map(self.simulator.get_state())
                 try:
                     action = self.get_action(agent, number)
                 except (AssertionError, ValueError) as e:
@@ -55,7 +78,9 @@ class Game:
                     self.score[number] -= PENALTY
                     return
                 try:
+                    print("we before simulator.act")
                     self.simulator.act(action, number + 1)
+                    print("we after simulator.act")
                 except (AssertionError, ValueError):
                     print(f'{agent.ids} chose illegal action!')
                     self.score[number] -= PENALTY
@@ -80,11 +105,11 @@ class Game:
         the general agent. You may also use an agent of your own, instead of sample agent.
         """
         print(f'***********  starting a first round!  ************ \n \n')
-        self.agents = [self.initiate_agent(exp3_322720103_314779166, 1),
+        self.agents = [self.initiate_agent(exp3_322720103_314779166, 1, UCT_flag=True),
                        self.initiate_agent(sample_agent, 2)]
         self.ids = ['Your agent', 'Rival agent']
         self.play_episode()
-        print(self.simulator.state)
+        # print(self.simulator.state)
 
         print(f'***********  starting a second round!  ************ \n \n')
         self.simulator = Simulator(self.initial_state)
