@@ -113,7 +113,7 @@ class Simulator:
             return False
 
         players_pirates = [pirate for pirate in self.state['pirate_ships'].keys() if self.state['pirate_ships'][pirate]['player'] == player]
-
+        
         if len(action) != len(players_pirates):
             logging.error(f"You had given {len(action)} atomic commands, while you control {len(players_pirates)}!")
             return False

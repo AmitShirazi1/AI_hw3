@@ -51,7 +51,7 @@ class Game:
                 symbols = []
                 for pirate_ship in state["pirate_ships"].values():
                     if pirate_ship["location"] == (row, cell):
-                        symbols.append('p')
+                        symbols.append(str(pirate_ship["player"]))
                 for marine_ship in state["marine_ships"].values():
                     if marine_ship["path"][marine_ship["index"]] == (row, cell):
                         symbols.append('m')
@@ -108,14 +108,14 @@ class Game:
         self.agents = [self.initiate_agent(exp3_322720103_314779166, 1, UCT_flag=True),
                        self.initiate_agent(sample_agent, 2)]
         self.ids = ['Your agent', 'Rival agent']
-        self.play_episode()
+        # self.play_episode()
         # print(self.simulator.state)
 
         print(f'***********  starting a second round!  ************ \n \n')
         self.simulator = Simulator(self.initial_state)
 
         self.agents = [self.initiate_agent(sample_agent, 1),
-                       self.initiate_agent(exp3_322720103_314779166, 2)]
+                       self.initiate_agent(exp3_322720103_314779166, 2, UCT_flag=True)]
         self.ids = ['Rival agent', 'Your agent']
         self.play_episode(swapped=True)
         print(f'end of game!')
