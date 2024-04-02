@@ -14,92 +14,96 @@ class Agent:
         self.ids = IDS
         self.player_number = player_number
         self.my_ships = []
+        self.rival_ships = list()
         self.simulator = Simulator(initial_state)
         for ship_name, ship in initial_state['pirate_ships'].items():
             if ship['player'] == player_number:
                 self.my_ships.append(ship_name)
+            else:
+                self.rival_ships.append(ship_name)
         print("number of ships: ", len(self.my_ships))
 
     def act(self, state):
         actions = {}
         self.simulator.set_state(state)
         collected_treasures = []
+        whole_action = list()
+
         for ship in self.my_ships:
-            actions[ship] = set()
-            neighboring_tiles = self.simulator.neighbors(state["pirate_ships"][ship]["location"])
-            for tile in neighboring_tiles:
-                actions[ship].add(("sail", ship, tile))
+            # neighboring_tiles = self.simulator.neighbors(state["pirate_ships"][ship]["location"])
+            # for tile in neighboring_tiles:
+            #     actions[ship].add(("sail", ship, tile))
+
+            for treasure in state["treasures"].keys():
+                if (state["pirate_ships"][ship]["location"] == state["base"]
+                        and state["treasures"][treasure]["location"] == ship):
+                    whole_action.append(("deposit", ship, treasure))
+                    break
+            else:
+                continue 
+
             if state["pirate_ships"][ship]["capacity"] > 0:
                 for treasure in state["treasures"].keys():
                     if state["pirate_ships"][ship]["location"] in self.simulator.neighbors(
                             state["treasures"][treasure]["location"]) and treasure not in collected_treasures:
-                        actions[ship].add(("collect", ship, treasure))
+                        whole_action.append(("collect", ship, treasure))
                         collected_treasures.append(treasure)
-            for treasure in state["treasures"].keys():
-                if (state["pirate_ships"][ship]["location"] == state["base"]
-                        and state["treasures"][treasure]["location"] == ship):
-                    actions[ship].add(("deposit", ship, treasure))
-            for enemy_ship_name in state["pirate_ships"].keys():
-                if (state["pirate_ships"][ship]["location"] == state["pirate_ships"][enemy_ship_name]["location"] and
-                        self.player_number != state["pirate_ships"][enemy_ship_name]["player"]):
-                    actions[ship].add(("plunder", ship, enemy_ship_name))
-            actions[ship].add(("wait", ship))
-
-        while True:
-            whole_action = []
-            for pirate_ship, atomic_actions in actions.items():
-                for action in atomic_actions:
-                    if action[0] == "deposit":
-                        whole_action.append(action)
-                        break
-                    if action[0] == "collect":
-                        whole_action.append(action)
                         break
                 else:
-                    whole_action.append(self.our_heuristic(list(atomic_actions), pirate_ship, state))
-            whole_action = tuple(whole_action)
-            if self.simulator.check_if_action_legal(whole_action, self.player_number):
-                return whole_action
+                    continue   
+            
+            for enemy_ship_name in self.rival_ships:
+                if (state["pirate_ships"][ship]["location"] == state["pirate_ships"][enemy_ship_name]["location"] and
+                        self.player_number != state["pirate_ships"][enemy_ship_name]["player"]):
+                    if state["pirate_ships"][enemy_ship_name]["capacity"] < 2:
+                        whole_action.append(("plunder", ship, enemy_ship_name))
+                        break
+            else:
+                continue 
+
+            whole_action.append(self.our_heuristic(ship, state))
+
+        whole_action = tuple(whole_action)
+        if self.simulator.check_if_action_legal(whole_action, self.player_number):
+            return whole_action
+        # TODO: Think about this return.
 
 
-    def our_heuristic(self, actions, pirate_ship, state):
-        # TODO: we need to go through all this function so in the end for each pirate ship we will decide on best action
-        """ Summing the minimum distances from each treasure to the base (using Manhattan Distance),
-        and dividing by the number of pirates. """
-        num_pirates = len(self.my_ships)
-
+    def our_heuristic(self, pirate_ship, state):
+        my_capacity = state["pirate_ships"][pirate_ship]["capacity"] # if 2 - my two hands are empty
         # A list of the minimum distances from each treasure to the base.
         # Initialized with infinity values (so that the distance of an unreachable treasure will be infinity) and updated with the actual distances.
-        min_distances_to_base = [float('inf')] * len(state["treasures"].keys())
-        max_reward = [0] * len(state["treasures"].keys())
-        scores = [0] * len(state["treasures"].keys())
+        min_distances_to_treasure, min_distances_to_base = float('inf'), float('inf')
         base_location = state["base"]
         pirate_location = state["pirate_ships"][pirate_ship]["location"]
-        for t, t_info in enumerate(state["treasures"].values()):
+
+        if my_capacity < 2:
+            for neighbor in self.simulator.neighbors(pirate_location):
+                temp_dist_to_base = abs(neighbor[0]-base_location[0]) + abs(neighbor[1]-base_location[1])
+                if temp_dist_to_base < min_distances_to_base:
+                    min_distances_to_base = temp_dist_to_base
+                    min_dist_to_base_neighbor = neighbor
+            return ('sail', pirate_ship, min_dist_to_base_neighbor)
+        
+        available_treasures = [v for v in state["treasures"].values() if type(v['location']) == tuple]
+        scores = [0] * len(available_treasures)
+        for t, t_info in enumerate(available_treasures):
             treasure_location = t_info["location"]
             treasure_reward = t_info["value"]
             #For each direction, check if there is an adjacent sea cell in this direction and if so, update the distance from this adjacent cell to the base - but only if it's shorter than the current distance.
-            for direction, index in zip(['u', 'd', 'l', 'r'], [(-1,0), (1,0), (0,-1), (0,1)]):
-                x = treasure_location[0] + index[0]  # The x coordinate of the adjacent cell.
-                y = treasure_location[1] + index[1]  # The y coordinate of the adjacent cell.
-                if (0 <= x < self.len_rows) and (0 <= y < self.len_cols):
-                    if state["map"][x][y] != "I":  # If the adjacent cell is sea.
-                        temp_dist = abs(base_location[0]-x) + abs(base_location[1]-y)  # The L1-distance from the adjacent cell to the base (Manhattan Distance).
-                        temo_dist += abs(pirate_location[0]-x) + abs(pirate_location[1]-y)
+            for adjacent in self.simulator.neighbors(treasure_location):
+                for neighbor in self.simulator.neighbors(pirate_location):
+                    temp_dist_to_treasure = abs(neighbor[0]-adjacent[0]) + abs(neighbor[1]-adjacent[1])  # The L1-distance from the adjacent cell to the base (Manhattan Distance).
 
-                        # Update the distance from the treasure to the base if the new distance is shorter.
-                        if temp_dist < min_distances_to_base[t]:
-                            min_distances_to_base[t] = temp_dist
-                
-            max_reward[t] = treasure_reward
-            scores[t] = max_reward[t] / min_distances_to_base[t]
-            
+                    # Update the distance from the treasure to the base if the new distance is shorter.
+                    if temp_dist_to_treasure < min_distances_to_treasure:
+                        min_distances_to_treasure = temp_dist_to_treasure
+                        min_dist_to_treasure_neighbor = neighbor
 
-            scores.append(
-
-
-
-        # return sum(min_distances_to_base) / num_pirates
+            scores[t] = (treasure_reward / min_distances_to_treasure, min_dist_to_treasure_neighbor)
+        sail_to = max(scores, key=lambda x: x[0])[1]
+        return ('sail', pirate_ship, sail_to)
+        # if we want to address marines - actions[ship].add(("wait", ship))
 
 
         
@@ -113,19 +117,19 @@ class UCTNode:
         self.action = action
         self.player_number = player_number
         self.children = list()
-        self.wins = 0
+        self.sum_score = 0
         self.visits = 0
     
     def select_using_uct(self):
         if self.visits == 0:
             return float('inf')
-        return self.wins / self.visits + (2 * math.log(self.parent.visits) / self.visits) ** 0.5
+        return self.sum_score / self.visits + (2 * math.log(self.parent.visits) / self.visits) ** 0.5
     
     def update_node(self, result):
         self.visits += 1
         is_winner = result['player '+str(self.player_number)] > result['player '+str(3 - self.player_number)]
         if is_winner > 0:
-            self.wins += 1
+            self.sum_score += 1
 
 # class UCTTree:
 #     """
@@ -239,6 +243,6 @@ class UCTAgent:
                 simulation_result = self.simulation(node, self.simulator.turns_to_go, Simulator(state))
                 self.backpropagation(node, simulation_result)
 
-        child = max(root.children, key=lambda child: child.wins / child.visits if child.visits else float("inf"))  # No exploration
+        child = max(root.children, key=lambda child: child.sum_score / child.visits if child.visits else float("inf"))  # No exploration
         return child.action
 
