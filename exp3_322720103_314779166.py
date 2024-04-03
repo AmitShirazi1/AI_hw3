@@ -16,18 +16,22 @@ class Agent:
         self.my_ships = []
         self.rival_ships = list()
         self.simulator = Simulator(initial_state)
+        # Saving the ships of the player and the rival player.
         for ship_name, ship in initial_state['pirate_ships'].items():
             if ship['player'] == player_number:
                 self.my_ships.append(ship_name)
             else:
                 self.rival_ships.append(ship_name)
 
+
     def act(self, state):
         collected_treasures = []
-        whole_action = list()
+        whole_action = list()  # A list that holds the action we choose for each of our pirate ships.
 
-        for ship in self.my_ships:
+        for ship in self.my_ships:  # For each pirate ship of our player, we will choose an action.
             found_action = False
+
+            # If the ship is in the base and has treasures, we will deposit them.
             for treasure in state["treasures"].keys():
                 if (state["pirate_ships"][ship]["location"] == state["base"]
                         and state["treasures"][treasure]["location"] == ship):
@@ -37,6 +41,7 @@ class Agent:
             if found_action:
                 continue
 
+            # If the ship is adjacent to a treasure, we will collect it.
             if state["pirate_ships"][ship]["capacity"] > 0:
                 for treasure in state["treasures"].keys():
                     if state["pirate_ships"][ship]["location"] in self.simulator.neighbors(
@@ -48,6 +53,7 @@ class Agent:
             if found_action:
                 continue
             
+            # If the ship is in the same location as an enemy ship, we will plunder it.
             for enemy_ship_name in self.rival_ships:
                 if (state["pirate_ships"][ship]["location"] == state["pirate_ships"][enemy_ship_name]["location"] and
                         self.player_number != state["pirate_ships"][enemy_ship_name]["player"]):
@@ -58,10 +64,14 @@ class Agent:
             if found_action:
                 continue
 
-            whole_action.append(self.our_heuristic(ship, state))
-        return tuple(whole_action)
+            # If we didn't choose any of our "favourite" actions above,
+            # we move on to check other actions this pirate ship can make - 'sail' or 'wait'.
+            whole_action.append(self.choose_sail_action(ship, state))
+        return tuple(whole_action)  # Returning the chosen actions for all of our pirate ships in a tuple format.
+
 
     def marine_location(self, state):
+        """ Returns a list of the current locations of the marine ships. """
         marine_locations = []
         for marine_stats in state["marine_ships"].values():
             index = marine_stats["index"]
@@ -69,37 +79,47 @@ class Agent:
         return marine_locations
 
     def collision_with_marine(self, location, marine_locations):
-            if location in marine_locations:
-                return True
-            else:
-                return False
+        """ Returns True if the location we want to sail to currently has a marine ship, otherwise False. """
+        if location in marine_locations:
+            return True
+        else:
+            return False
 
-    def our_heuristic(self, pirate_ship, state):
-        my_capacity = state["pirate_ships"][pirate_ship]["capacity"] # if 2 - my two hands are empty
-        # A list of the minimum distances from each treasure to the base.
+    def choose_sail_action(self, pirate_ship, state):
+        """ Returns the action we choose for a specific pirate ship - sail or wait.
+            Choosing the action is based on the distance from the pirate ship to the base and the treasures,
+            the reward we can get from each treasure,
+            and the locations of the marine ships.
+        """
+        my_capacity = state["pirate_ships"][pirate_ship]["capacity"] # if 2, my two hands are empty
         # Initialized with infinity values (so that the distance of an unreachable treasure will be infinity) and updated with the actual distances.
         min_distances_to_treasure, min_distances_to_base = float('inf'), float('inf')
         base_location = state["base"]
         pirate_location = state["pirate_ships"][pirate_ship]["location"]
         marine_locations = self.marine_location(state)
         
+        # If the pirate ship holds treasures, we will sail to the base to deposit them.
         if my_capacity < 2:
+            # Find the direction closest to the base as the direction we want to sail to.
             for neighbor in self.simulator.neighbors(pirate_location):
                 temp_dist_to_base = abs(neighbor[0]-base_location[0]) + abs(neighbor[1]-base_location[1])
                 if temp_dist_to_base < min_distances_to_base:
                     min_distances_to_base = temp_dist_to_base
                     min_dist_to_base_neighbor = neighbor
+            # If the location we want to sail to has a marine ship, we will wait.
             if self.collision_with_marine(min_dist_to_base_neighbor, marine_locations):
                 return ('wait', pirate_ship)
             return ('sail', pirate_ship, min_dist_to_base_neighbor)
         
         available_treasures = [v for v in state["treasures"].values() if type(v['location']) == tuple]
-        scores = [0] * len(available_treasures)
+        scores = [(0,)] * len(available_treasures)  # A list that holds a tuple of the score we calculated for each treasure and the location we want to sail to in order to reach it.
+        # For each treasure, we will calculate the score we can get from it and the location we want to sail to in order to reach it.
         for t, t_info in enumerate(available_treasures):
             treasure_location = t_info["location"]
             treasure_reward = t_info["reward"]
-            #For each direction, check if there is an adjacent sea cell in this direction and if so, update the distance from this adjacent cell to the base - but only if it's shorter than the current distance.
+            # For each adjacent cell of the treasure (from which we can collect this treasure), we will calculate the distance from the pirate ship to it.
             for adjacent in self.simulator.neighbors(treasure_location):
+                # Find the direction closest to the treasure as the direction we want to sail to.
                 for neighbor in self.simulator.neighbors(pirate_location):
                     temp_dist_to_treasure = 1 + abs(neighbor[0]-adjacent[0]) + abs(neighbor[1]-adjacent[1])  # The L1-distance from the adjacent cell to the base (Manhattan Distance).
 
@@ -108,8 +128,10 @@ class Agent:
                         min_distances_to_treasure = temp_dist_to_treasure
                         min_dist_to_treasure_neighbor = neighbor
 
+            # We define the score for each treasure as the ratio between the reward we can get from it and the shortest distance from the pirate ship to it.
             scores[t] = (treasure_reward / min_distances_to_treasure, min_dist_to_treasure_neighbor)
-        sail_to = max(scores, key=lambda x: x[0])[1]
+        sail_to = max(scores, key=lambda x: x[0])[1]  # The location we want to sail to in order to reach the treasure is the one with the highest score.
+        # If the location we want to sail to has a marine ship, we will wait.
         if self.collision_with_marine(sail_to, marine_locations):
             return ('wait', pirate_ship)
         return ('sail', pirate_ship, sail_to)
