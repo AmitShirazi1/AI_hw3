@@ -122,6 +122,8 @@ class UCTNode:
     A class for a single node. not mandatory to use but may help you.
     """
     def __init__(self, parent=None, action=None, player_number=0):
+        # Initialize the node with the parent node, the action that was taken to reach this node and the player number.
+        # We also have a list of the children of this node, the sum of the scores and the number of visits.
         self.parent = parent
         self.action = action
         self.player_number = player_number
@@ -130,11 +132,15 @@ class UCTNode:
         self.visits = 0
     
     def select_using_uct(self):
+        # UCT formula
         if self.visits == 0:
             return float('inf')
         return self.sum_score / self.visits + (2 * math.log(self.parent.visits) / self.visits) ** 0.5
     
     def update_node(self, result):
+        # result is a dictionary with player 1 and player 2 scores.
+        # we calculate here the score of the node
+        # 3 - self.player_number is the rival player number
         self.visits += 1
         is_winner = result['player '+str(self.player_number)] > result['player '+str(3 - self.player_number)]
         if is_winner > 0:
@@ -148,6 +154,8 @@ class UCTNode:
 #         raise NotImplementedError
 
 class UCTAgent:
+    # We decided to initialize the agent with the initial state and the player number that are given.
+    # We also have a list of the ships that belong to the agent and a list of the ships that belong to the rival.
     def __init__(self, initial_state, player_number):
         self.ids = IDS
         self.player_number = player_number
@@ -162,6 +170,9 @@ class UCTAgent:
                 self.rival_ships.append(ship_name)
 
     def selection(self, root):
+        '''
+        The selection function is used to select a child node to explore, acordingly to the UCT formula and MCTS algorithm.
+        '''
         curr_node = root        
         while curr_node.children:
             max_uct_value = float('-inf')
@@ -179,14 +190,19 @@ class UCTAgent:
     
 
     def get_legal_actions(self, state, player_number):
+        '''
+        The get_legal_actions function is used to get all the legal actions that the agent can take in the current state.
+        '''
         actions = {}
         collected_treasures = []
         ships = self.my_ships if player_number == self.player_number else self.rival_ships
         for ship in ships:
             actions[ship] = set()
+            # Get all the neighboring tiles of the ship - only the ones that are sea tiles.
             neighboring_tiles = self.simulator.neighbors(state["pirate_ships"][ship]["location"])
             for tile in neighboring_tiles:
                 actions[ship].add(("sail", ship, tile))
+            # check if we can do a collect action
             if state["pirate_ships"][ship]["capacity"] > 0:
                 for treasure in state["treasures"].keys():
                     if state["pirate_ships"][ship]["location"] in self.simulator.neighbors(state["treasures"][treasure]["location"])\
@@ -194,10 +210,12 @@ class UCTAgent:
                         actions[ship].add(("collect", ship, treasure))
                         collected_treasures.append(treasure)
             for treasure in state["treasures"].keys():
+                # check if we can do a deposit action
                 if (state["pirate_ships"][ship]["location"] == state["base"]
                         and state["treasures"][treasure]["location"] == ship):
                     actions[ship].add(("deposit", ship, treasure))
             for enemy_ship_name in state["pirate_ships"].keys():
+                # check if we can do a plunder action
                 if (state["pirate_ships"][ship]["location"] == state["pirate_ships"][enemy_ship_name]["location"] and
                         self.player_number != state["pirate_ships"][enemy_ship_name]["player"]):
                     actions[ship].add(("plunder", ship, enemy_ship_name))
@@ -207,18 +225,28 @@ class UCTAgent:
         
     # def expansion(self, UCT_tree, parent_node):
     def expansion(self, state, parent_node):
+        ''' 
+        The expansion is as learned in class based on MCTS algorithm. 
+        It is used to expand the tree and choose randomly a child node to explore.
+        '''
         for action in self.get_legal_actions(state, parent_node.player_number):
             new_node = UCTNode(parent_node, action, 3 - parent_node.player_number)
             parent_node.children.append(new_node)
         return random.choice(parent_node.children)
 
     def simulation(self, node, turns_to_go, simulator):
+        '''
+        The simulation function is based on the MCTS algorithm as we learned in class.
+        It is used to simulate the game until the end and return the score so we can backpropagate it.
+        '''
         if turns_to_go == 0:
             return simulator.get_score()  # Score is a dictionary with player 1 and player 2 scores.
         if node.children:
             treasures = self.simulator.state["treasures"].keys()
             children_nodes = list()
             for child in node.children:
+                # check if we can do a collect action, if not, we won't choose this child node to explore.
+                # This is because the function in simulator do not check if the treasure is already collected/vinish.
                 flag = False
                 for atomic_action in child.action:
                     if ((atomic_action[0] == "collect") and (atomic_action[2] not in treasures)):
@@ -228,24 +256,34 @@ class UCTAgent:
                     children_nodes.append(child)
             child_node = random.choice(children_nodes)
         else:
+            # If there are no children nodes, we will expand the tree and choose randomly a child node to explore.
             child_node = self.expansion(simulator.state, node)
         simulator.act(child_node.action, node.player_number)
         return self.simulation(child_node, (turns_to_go - 1), simulator)
 
 
     def backpropagation(self, node, simulation_result):
+        '''
+        The backpropagation function is used to update the nodes in the tree with the simulation result,
+        as we learned in class, based on the MCTS algorithm.'''
         while node is not None:
             node.update_node(simulation_result)
             node = node.parent
 
 
     def act(self, state):
+        '''
+        The act function is used to run the MCTS algorithm and return the best action to take.
+        We also check the time so we won't exceed the time limit.
+        In the end we choose the best child node to explore and return the action of this node.
+        '''
         start_time = time()
         root = UCTNode(player_number=self.player_number)
 
         while time() - start_time < 4.2:
             node = self.selection(root)
             if self.simulator.turns_to_go == 0:
+                # If we reached the end of the game, we will backpropagate the score and return the best action.
                 self.backpropagation(node, self.simulator.get_score())
             else:
                 self.expansion(state, node)
